@@ -1,0 +1,1 @@
+[ ] Check for cmake in atari-py and give a clearer error msg
