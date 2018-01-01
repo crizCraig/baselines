@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import tensorflow as tf
 from baselines.a2c.utils import conv, fc, conv_to_fc, batch_to_seq, seq_to_batch, lstm, lnlstm, sample
@@ -99,22 +100,29 @@ class CnnPolicy(object):
             h3 = conv(h2, 'c3', nf=64, rf=3, stride=1, init_scale=np.sqrt(2))
             h3 = conv_to_fc(h3)
             h4 = fc(h3, 'fc1', nh=512, init_scale=np.sqrt(2))
-            pi = fc(h4, 'pi', nact, act=lambda x:x)
-            vf = fc(h4, 'v', 1, act=lambda x:x)
+            if 'CSQ' in os.environ:
+                pi = fc(h4, 'pi', nact, act=tf.nn.softmax)
+            else:
+                pi = fc(h4, 'pi', nact, act=lambda x: x)
+
+            vf = fc(h4, 'v', 1, act=lambda x:x)  # value function
 
         v0 = vf[:, 0]
         a0 = sample(pi)
+        aprobs0 = tf.nn.softmax(pi)  # action probs
         self.initial_state = [] #not stateful
 
         def step(ob, *_args, **_kwargs):
-            a, v = sess.run([a0, v0], {X:ob})
-            return a, v, [] #dummy state
+            a, v, aprobs = sess.run([a0, v0, aprobs0], {X:ob})
+            # TODO: Somehow scale negative rewards by their odds (p / (1 - p))
+            return a, v, aprobs, [] #dummy state
 
         def value(ob, *_args, **_kwargs):
             return sess.run(v0, {X:ob})
 
         self.X = X
-        self.pi = pi
+        self.pi = pi  # policy
+        self.aprobs0 = aprobs0
         self.vf = vf
         self.step = step
         self.value = value
