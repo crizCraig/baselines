@@ -220,7 +220,8 @@ class Runner(object):
                 for adv_i, adv in enumerate(advs):
                     if adv < 0:
                         adv_scale = 1. + chosen_probs[adv_i] / (1. - chosen_probs[adv_i])
-                        adv_scale = min(adv_scale, 5.0)
+                        adv_scale = 1.0  # Disable with minimal code change
+                        # adv_scale = min(adv_scale, 5.0)
                         corrected_advs.append(adv * adv_scale)
                     else:
                         corrected_advs.append(adv)
