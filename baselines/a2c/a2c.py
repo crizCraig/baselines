@@ -206,7 +206,7 @@ class Runner(object):
         mb_states = self.states
         for n in range(self.nsteps):
             actions, values, aprobs, states = self.model.step(self.obs, self.states, self.dones)
-            chosen_probs = np.take(aprobs, actions)
+            chosen_probs = aprobs[range(len(actions)), actions]
             mb_obs.append(np.copy(self.obs))
             mb_actions.append(actions)
             mb_values.append(values)
@@ -217,9 +217,11 @@ class Runner(object):
             advs = rewards - values
             if 'MIS_ADV' in os.environ:
                 corrected_rewards = rewards
-                for adv in advs:
+                for adv_i, adv in enumerate(advs):
                     if adv < 0:
-                        corrected_advs.append(adv * (1 + chosen_probs[i] / (1 - chosen_probs[i])))
+                        adv_scale = 1. + chosen_probs[adv_i] / (1. - chosen_probs[adv_i])
+                        adv_scale = min(adv_scale, 5.0)
+                        corrected_advs.append(adv * adv_scale)
                     else:
                         corrected_advs.append(adv)
             else:
@@ -250,6 +252,7 @@ class Runner(object):
         #batch of steps to batch of rollouts
         mb_obs = np.asarray(mb_obs, dtype=np.uint8).swapaxes(1, 0).reshape(self.batch_ob_shape)
         mb_rewards = np.asarray(mb_rewards, dtype=np.float32).swapaxes(1, 0)
+        mb_advs = np.asarray(mb_advs, dtype=np.float32).swapaxes(1, 0)
         mb_actions = np.asarray(mb_actions, dtype=np.int32).swapaxes(1, 0)
         mb_values = np.asarray(mb_values, dtype=np.float32).swapaxes(1, 0)
         mb_dones = np.asarray(mb_dones, dtype=np.bool).swapaxes(1, 0)
@@ -266,6 +269,7 @@ class Runner(object):
                 rewards = discount_with_dones(rewards, dones, self.gamma)
             mb_rewards[n] = rewards
         mb_rewards = mb_rewards.flatten()
+        mb_advs = mb_advs.flatten()
         mb_actions = mb_actions.flatten()
         mb_values = mb_values.flatten()
         mb_masks = mb_masks.flatten()
