@@ -4,6 +4,7 @@ import time
 import joblib
 import logging
 import numpy as np
+import os
 import tensorflow as tf
 from baselines import logger
 
@@ -15,6 +16,15 @@ from baselines.a2c.utils import discount_with_dones
 from baselines.a2c.utils import Scheduler, make_path, find_trainable_variables
 from baselines.a2c.policies import CnnPolicy
 from baselines.a2c.utils import cat_entropy, mse
+
+
+SHOULD_PRINT_TF = False
+
+
+def tp(name, tensor, summarize=100):
+    if SHOULD_PRINT_TF:
+        tensor = tf.Print(tensor, [name, tensor], summarize=summarize)
+    return tensor
 
 class Model(object):
 
@@ -53,8 +63,8 @@ class Model(object):
 
         lr = Scheduler(v=lr, nvalues=total_timesteps, schedule=lrschedule)
 
-        def train(obs, states, rewards, masks, actions, values):
-            advs = rewards - values
+        def train(obs, states, rewards, masks, actions, values, advs):
+            # advs = rewards - values
             for step in range(len(obs)):
                 cur_lr = lr.value()
             td_map = {train_model.X:obs, A:actions, ADV:advs, R:rewards, LR:cur_lr}
@@ -113,10 +123,11 @@ class Runner(object):
         self.obs[:, :, :, -self.nc:] = obs
 
     def run(self):
-        mb_obs, mb_rewards, mb_actions, mb_values, mb_dones = [],[],[],[],[]
+        mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_chosen_probs = [],[],[],[],[],[]  # Minibatch = mb
         mb_states = self.states
         for n in range(self.nsteps):
-            actions, values, states = self.model.step(self.obs, self.states, self.dones)
+            actions, values, aprobs, states = self.model.step(self.obs, self.states, self.dones)
+            mb_chosen_probs.append(aprobs[range(len(actions)), actions])
             mb_obs.append(np.copy(self.obs))
             mb_actions.append(actions)
             mb_values.append(values)
@@ -129,10 +140,12 @@ class Runner(object):
                     self.obs[n] = self.obs[n]*0
             self.update_obs(obs)
             mb_rewards.append(rewards)
+
         mb_dones.append(self.dones)
         #batch of steps to batch of rollouts
         mb_obs = np.asarray(mb_obs, dtype=np.uint8).swapaxes(1, 0).reshape(self.batch_ob_shape)
         mb_rewards = np.asarray(mb_rewards, dtype=np.float32).swapaxes(1, 0)
+        mb_chosen_probs = np.asarray(mb_chosen_probs, dtype=np.float32).swapaxes(1, 0)
         mb_actions = np.asarray(mb_actions, dtype=np.int32).swapaxes(1, 0)
         mb_values = np.asarray(mb_values, dtype=np.float32).swapaxes(1, 0)
         mb_dones = np.asarray(mb_dones, dtype=np.bool).swapaxes(1, 0)
@@ -149,10 +162,26 @@ class Runner(object):
                 rewards = discount_with_dones(rewards, dones, self.gamma)
             mb_rewards[n] = rewards
         mb_rewards = mb_rewards.flatten()
+        mb_chosen_probs = mb_chosen_probs.flatten()
         mb_actions = mb_actions.flatten()
         mb_values = mb_values.flatten()
         mb_masks = mb_masks.flatten()
-        return mb_obs, mb_states, mb_rewards, mb_masks, mb_actions, mb_values
+
+        mb_advs = mb_rewards - mb_values
+        corrected_advs = []
+        if 'MIS_ADV' in os.environ:
+            for adv_i, adv in enumerate(mb_advs):
+                if adv < 0:
+                    adv_scale = 1. + mb_chosen_probs[adv_i] / (1. - mb_chosen_probs[adv_i])
+                    # adv_scale = 1.0  # Disable with minimal code change
+                    # adv_scale = min(adv_scale, 5.0)
+                    corrected_advs.append(adv * adv_scale)
+                else:
+                    corrected_advs.append(adv)
+            mb_advs = np.array(corrected_advs)
+
+        return mb_obs, mb_states, mb_rewards, mb_masks, mb_actions, mb_values, mb_advs
+
 
 def learn(policy, env, seed, nsteps=5, nstack=4, total_timesteps=int(80e6), vf_coef=0.5, ent_coef=0.01, max_grad_norm=0.5, lr=7e-4, lrschedule='linear', epsilon=1e-5, alpha=0.99, gamma=0.99, log_interval=100):
     tf.reset_default_graph()
@@ -169,8 +198,8 @@ def learn(policy, env, seed, nsteps=5, nstack=4, total_timesteps=int(80e6), vf_c
     nbatch = nenvs*nsteps
     tstart = time.time()
     for update in range(1, total_timesteps//nbatch+1):
-        obs, states, rewards, masks, actions, values = runner.run()
-        policy_loss, value_loss, policy_entropy = model.train(obs, states, rewards, masks, actions, values)
+        obs, states, rewards, masks, actions, values, advs = runner.run()
+        policy_loss, value_loss, policy_entropy = model.train(obs, states, rewards, masks, actions, values, advs)
         nseconds = time.time()-tstart
         fps = int((update*nbatch)/nseconds)
         if update % log_interval == 0 or update == 1:
