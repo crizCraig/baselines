@@ -22,6 +22,7 @@ def make_atari_env(env_id, num_env, seed, wrapper_kwargs=None, start_index=0):
             env = make_atari(env_id)
             env.seed(seed + rank)
             env = Monitor(env, logger.get_dir() and os.path.join(logger.get_dir(), str(rank)))
+            env.__rank = rank
             return wrap_deepmind(env, **wrapper_kwargs)
         return _thunk
     set_global_seeds(seed)
@@ -85,4 +86,14 @@ def robotics_arg_parser():
     parser.add_argument('--env', help='environment ID', type=str, default='FetchReach-v0')
     parser.add_argument('--seed', help='RNG seed', type=int, default=0)
     parser.add_argument('--num-timesteps', type=int, default=int(1e6))
+    return parser
+
+def continuous_mountain_car_arg_parser():
+    """
+    Create an argparse.ArgumentParser for run_mujoco.py.
+    """
+    parser = arg_parser()
+    parser.add_argument('--env', help='environment ID', type=str, default='MountainCarContinuous-v0')
+    parser.add_argument('--seed', help='RNG seed', type=int, default=0)
+    parser.add_argument('--num-timesteps', type=int, default=int(10e6))
     return parser

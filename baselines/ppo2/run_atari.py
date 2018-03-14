@@ -21,12 +21,17 @@ def train(env_id, num_timesteps, seed, policy):
 
     env = VecFrameStack(make_atari_env(env_id, 8, seed), 4)
     policy = {'cnn' : CnnPolicy, 'lstm' : LstmPolicy, 'lnlstm' : LnLstmPolicy}[policy]
-    ppo2.learn(policy=policy, env=env, nsteps=128, nminibatches=4,
-        lam=0.95, gamma=0.99, noptepochs=4, log_interval=1,
-        ent_coef=.01,
-        lr=lambda f : f * 2.5e-4,
-        cliprange=lambda f : f * 0.1,
-        total_timesteps=int(num_timesteps * 1.1))
+    ppo2.learn(policy=policy,
+               env=env,
+               nsteps=128,
+               nminibatches=4,
+               lam=0.95,
+               gamma=0.99,
+               noptepochs=4, log_interval=1,
+               ent_coef=.01,
+               lr=lambda f: f * 2.5e-4,
+               cliprange=lambda f: f * 0.1,
+               total_timesteps=int(num_timesteps * 1.1))
 
 def main():
     parser = atari_arg_parser()
