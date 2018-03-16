@@ -14,6 +14,10 @@ LD_LIBRARY_PATH=/usr/local/lib
 export LD_LIBRARY_PATH
 ```
 
+Install OpenCV:
+
+```pip install python-opencv```
+
 
 You can install it by typing:
 

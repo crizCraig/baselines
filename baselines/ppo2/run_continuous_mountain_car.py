@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 import argparse
+
+import os
+
 from baselines.common.cmd_util import continuous_mountain_car_arg_parser
 from baselines import bench, logger
 
@@ -8,7 +11,7 @@ def train(env_id, num_timesteps, seed):
     from baselines.common import set_global_seeds
     from baselines.common.vec_env.vec_normalize import VecNormalize
     from baselines.ppo2 import ppo2
-    from baselines.ppo2.policies import MlpPolicy
+    from baselines.ppo2.policies import MlpPolicy, LstmPolicyFlat
     import gym
     import tensorflow as tf
     from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
@@ -33,11 +36,14 @@ def train(env_id, num_timesteps, seed):
     env = VecNormalize(env)
 
     set_global_seeds(seed)
-    policy = MlpPolicy
+    if 'LSTM_FLAT' in os.environ:
+        policy = LstmPolicyFlat
+    else:
+        policy = MlpPolicy
     ppo2.learn(policy=policy,
                env=env,
                nsteps=256,
-               nminibatches=8,
+               nminibatches=32,  # Sweet spot is between 16 and 64
                lam=0.95,
                gamma=0.99,
                noptepochs=10,
